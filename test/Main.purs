@@ -13,9 +13,25 @@ import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Exception (EXCEPTION)
 import Control.Monad.Eff.Console (CONSOLE, log)
 
-import Node.HTTP        as Node
+import Node.HTTP as Node
 
-import REST.Endpoint (comments, header, post, lit, response, get, Sink, ServiceError(..), class Endpoint, class AsForeign, class HasExample, sendResponse, Source, jsonResponse, jsonRequest)
+import REST.Endpoint (
+      comments
+    , header
+    , post
+    , lit
+    , response
+    , get
+    , Sink
+    , ServiceError(..)
+    , class Endpoint
+    , class AsForeign
+    , class HasExample
+    , sendResponse
+    , Source
+    , jsonResponse
+    , jsonRequest
+  )
 import REST.Server (serve)
 import REST.Docs (serveDocs)
 
@@ -37,15 +53,20 @@ instance echoAsForeign :: AsForeign Echo where
 instance echoHasExample :: HasExample Echo where
   example = Echo "Hello, World!"
 
-home :: forall e eff. (Endpoint e) => e (Eff (http :: Node.HTTP | eff) Unit)
+home :: forall e eff. (Endpoint e) => e (Eff (http :: Node.HTTP, err :: EXCEPTION, console :: CONSOLE | eff) Unit)
 home = worker <$> (get *> response)
   where
   worker res = sendResponse res 200 "text/plain" "Hello, world!"
 
-echo :: forall e eff. (Endpoint e) => e (Eff (http :: Node.HTTP, err :: EXCEPTION | eff) Unit)
+echo :: forall e eff. (Endpoint e) => e (Eff (http :: Node.HTTP, err :: EXCEPTION, console :: CONSOLE | eff) Unit)
 echo = worker <$> (docs *> post *> lit "echo" *> shoutHeader) <*> jsonRequest <*> jsonResponse <*> response
   where
-  worker :: String -> Source eff (Either ServiceError Echo) -> Sink eff Echo -> Node.Response -> Eff (http :: Node.HTTP, err :: EXCEPTION | eff) Unit
+  worker ::
+    String ->
+    Source eff (Either ServiceError Echo) ->
+    Sink eff Echo ->
+    Node.Response ->
+    Eff (http :: Node.HTTP, err :: EXCEPTION, console :: CONSOLE | eff) Unit
   worker shout source sink res = do
     source \e ->
       case e of
@@ -61,8 +82,8 @@ echo = worker <$> (docs *> post *> lit "echo" *> shoutHeader) <*> jsonRequest <*
   shoutHeader :: (Endpoint e) => e String
   shoutHeader = header "X-Shout" "This header should be non-empty if the result should be capitalized."
 
-endpoints :: forall e eff. (Endpoint e) => Array (e (Eff (http :: Node.HTTP | eff) Unit))
-endpoints = [ home ]
+endpoints :: forall e eff. (Endpoint e) => Array (e (Eff (http :: Node.HTTP, err :: EXCEPTION, console :: CONSOLE | eff) Unit))
+endpoints = [ home, echo ]
 
 template :: forall a. Markup a -> Markup a
 template body = do
@@ -75,6 +96,7 @@ template body = do
       H.div ! A.className "container" $ body
 
 main :: forall e. Eff ( http :: Node.HTTP
+                      , err :: EXCEPTION
                       , console :: CONSOLE
                       | e
                       )

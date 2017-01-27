@@ -34,6 +34,8 @@ import Control.Alt ((<|>))
 import Control.Apply
 import Control.Monad (when)
 import Control.Monad.Eff
+import Control.Monad.Eff.Exception (EXCEPTION)
+import Control.Monad.Eff.Console (CONSOLE, log)
 
 import Text.Smolder.HTML                as H
 import Text.Smolder.HTML.Attributes     as A
@@ -133,6 +135,7 @@ documentToMarkup baseURL (Docs (Document d) _) = do
     H.button ! A.type' "submit" ! A.className "btn btn-default" $ text "Submit"
   H.h3 $ text "API Response"
   H.pre $ H.code ! A.id "tester-response" $ text "No response"
+  -- TODO: Do not escape script.
   H.script ! A.type' "text/javascript" $ text javascriptContent
   where
   routePartToArg :: RoutePart -> Maybe Arg
@@ -193,6 +196,7 @@ documentToMarkup baseURL (Docs (Document d) _) = do
 
   javascriptContent :: String
   javascriptContent = foldMap ((<>) "\n") $
+    -- TODO: Smolder escapes this.
     [ "var tester = document.getElementById('tester');"
     , "tester.onsubmit = function() {"
     , "  var xhr = new XMLHttpRequest();"
@@ -310,12 +314,12 @@ serveDocs :: forall f b eff any.
   f (Docs any) ->
   (Markup b -> Markup b) ->
   Int ->
-  Eff (http :: Node.HTTP | eff) Unit ->
-  Eff (http :: Node.HTTP | eff) Unit
+  Eff (http :: Node.HTTP, err :: EXCEPTION, console :: CONSOLE | eff) Unit ->
+  Eff (http :: Node.HTTP, err :: EXCEPTION, console :: CONSOLE | eff) Unit
 serveDocs baseURL endpoints wrap = serve (L.Cons tocEndpoint (L.fromFoldable (map toServer endpoints)))
   where
-  toServer :: Docs any -> Server (Eff (http :: Node.HTTP | eff) Unit)
+  toServer :: Docs any -> Server (Eff (http :: Node.HTTP, err :: EXCEPTION, console :: CONSOLE | eff) Unit)
   toServer s@(Docs (Document d) server) = staticHtmlResponse (lit "endpoint" *> lit (fromMaybe "GET" d.method) *> server $> wrap (documentToMarkup baseURL s))
 
-  tocEndpoint :: Server (Eff (http :: Node.HTTP | eff) Unit)
+  tocEndpoint :: Server (Eff (http :: Node.HTTP, err :: EXCEPTION, console :: CONSOLE | eff) Unit)
   tocEndpoint = staticHtmlResponse (get $> wrap (generateTOC (map generateDocs (L.fromFoldable endpoints))))

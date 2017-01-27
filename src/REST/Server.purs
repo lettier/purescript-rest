@@ -11,6 +11,7 @@ import Data.Tuple ()
 import Data.Monoid ()
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Ref (newRef, modifyRef, readRef)
+import Control.Monad.Eff.Exception (EXCEPTION)
 import REST.Endpoint (ServiceError(..), class Endpoint, sendResponse, response, asForeign)
 import REST.JSON (prettyJSON)
 import Data.List as L
@@ -23,6 +24,7 @@ import Control.Alt ((<|>))
 import Control.Monad.Eff.Ref.Unsafe (unsafeRunRef)
 import Control.Monad.Except (runExcept, catchError)
 import Control.Monad.Except.Trans (runExceptT, catchError)
+import Control.Monad.Eff.Console (CONSOLE, log)
 import Data.Array (fromFoldable)
 import Data.Either (Either(..), either)
 import Data.Foldable (class Foldable)
@@ -107,14 +109,19 @@ instance endpointServer :: Endpoint Server where
   response   = Server \_ res r -> Just (ServerResult r (Right res))
 
   jsonRequest = Server \req res r ->
-    let receive _ = do
-          let requestStream = Node.requestAsStream req
-          Node.setEncoding requestStream Node.UTF8
+    let receive respond = do
+          let requestStream  = Node.requestAsStream req
           bodyRef <- unsafeRunRef $ newRef ""
           Node.onDataString requestStream UTF8 \s -> do
             unsafeRunRef $ modifyRef bodyRef ((<>) s)
-          Node.onError requestStream \ _ -> pure unit
-          Node.onEnd requestStream (pure unit)
+          Node.onError requestStream \ s -> do
+            respond (Left (ServiceError 500 "Internal server error"))
+          Node.onEnd requestStream do
+            body <- unsafeRunRef $ readRef bodyRef
+            log(body)
+            case runExcept $ readJSON body of
+              Right a -> respond (Right a)
+              Left  _ -> respond (Left (ServiceError 400 "Bad request"))
           pure unit
     in Just (ServerResult r (Right receive))
 
@@ -131,15 +138,15 @@ instance endpointServer :: Endpoint Server where
 -- | Serve a set of endpoints on the specified port.
 serve :: forall f eff.
   (Foldable f) =>
-  f (Server (Eff (http :: Node.HTTP | eff) Unit)) ->
+  f (Server (Eff (http :: Node.HTTP, err :: EXCEPTION, console :: CONSOLE | eff) Unit)) ->
   Int ->
-  Eff (http :: Node.HTTP | eff) Unit ->
-  Eff (http :: Node.HTTP | eff) Unit
+  Eff (http :: Node.HTTP, err :: EXCEPTION, console :: CONSOLE | eff) Unit ->
+  Eff (http :: Node.HTTP, err :: EXCEPTION, console :: CONSOLE | eff) Unit
 serve endpoints port callback = do
   server <- Node.createServer respond
   Node.listen server { hostname : "localhost", port : port, backlog : Nothing } callback
   where
-  respond :: Node.Request -> Node.Response -> Eff (http :: Node.HTTP | eff) Unit
+  respond :: Node.Request -> Node.Response -> Eff (http :: Node.HTTP, err :: EXCEPTION, console :: CONSOLE | eff) Unit
   respond req res = do
     let pr = parseRequest req
     case firstSuccess (L.mapMaybe (\(Server f) -> f req res pr >>= ensureEOL) (L.fromFoldable endpoints)) of

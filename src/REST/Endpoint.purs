@@ -42,6 +42,7 @@ import Data.Foreign.Class (class IsForeign)
 
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Exception (EXCEPTION)
+import Control.Monad.Eff.Console (CONSOLE, log)
 
 import Data.List as L
 
@@ -81,10 +82,10 @@ class (AsForeign a) <= HasExample a where
   example :: a
 
 -- | A `Sink` receives a response.
-type Sink eff res = res -> Eff (http :: Node.HTTP | eff) Unit
+type Sink eff res = res -> Eff (http :: Node.HTTP, err :: EXCEPTION, console :: CONSOLE | eff) Unit
 
 -- | A `Source` provides a request asynchronously.
-type Source eff req = (req -> Eff (http :: Node.HTTP | eff) Unit) -> Eff (http :: Node.HTTP, err :: EXCEPTION | eff) Unit
+type Source eff req = (req -> Eff (http :: Node.HTTP, err :: EXCEPTION, console :: CONSOLE | eff) Unit) -> Eff (http :: Node.HTTP, err :: EXCEPTION, console :: CONSOLE | eff) Unit
 
 -- | A service error - status code and message.
 data ServiceError = ServiceError Int String
@@ -138,11 +139,11 @@ htmlResponse = map toClient response
   toClient res = sendResponse res 200 "text/html" <<< render
 
 -- | Serve static HTML in the response body.
-staticHtmlResponse :: forall e eff. (Endpoint e) => e (Markup _) -> e (Eff (http :: Node.HTTP | eff) Unit)
+staticHtmlResponse :: forall e eff. (Endpoint e) => e (Markup _) -> e (Eff (http :: Node.HTTP, err :: EXCEPTION, console :: CONSOLE | eff) Unit)
 staticHtmlResponse = apply htmlResponse
 
 -- | Send a basic response to the client, specifying a status code, status message and response body.
-sendResponse :: forall eff. Node.Response -> Int -> String -> String -> Eff (http :: Node.HTTP | eff) Unit
+sendResponse :: forall eff. Node.Response -> Int -> String -> String -> Eff (http :: Node.HTTP, err :: EXCEPTION, console :: CONSOLE | eff) Unit
 sendResponse res code contentType message = do
   Node.setStatusCode res code
   Node.setHeader res "Content-Type" contentType
